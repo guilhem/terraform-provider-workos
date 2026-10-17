@@ -8,7 +8,7 @@ description: |-
 # workos_authkit_configuration (Resource)
 
 Manage login callbacks and their default, logout URLs and their default, allowed CORS origins,
-the initiate-login URL, signup, and waitlist settings on an existing WorkOS environment and its
+the initiate-login URL, AuthKit enablement, signup, and waitlist settings on an existing WorkOS environment and its
 default AuthKit application. This resource creates no environments, applications, or customer data.
 
 ## Prerequisites and ownership
@@ -49,6 +49,7 @@ resource "workos_authkit_configuration" "app" {
   default_logout_uri   = "https://app.example.com/signed-out"
   cors_origins         = ["https://app.example.com"]
   initiate_login_uri   = "https://app.example.com/login"
+  authkit_enabled      = true
   allow_signup         = true
   waitlist_enabled     = false
 }
@@ -57,6 +58,10 @@ resource "workos_authkit_configuration" "app" {
 After apply, a refresh reads the selected defaults and complete sets back from WorkOS. A subsequent
 plan should show no changes. Existing unrelated AuthKit settings are omitted from mutation inputs
 and remain unmanaged.
+
+`authkit_enabled` is required: set it explicitly to enable or disable AuthKit independently of
+signup and waitlist settings. Refresh/import reads the actual value, and apply corrects enablement
+drift through `updateUserlandSettings` with readback verification.
 
 {{ .SchemaMarkdown | trimspace }}
 
@@ -113,5 +118,5 @@ HTTP mocks and Terraform lifecycle tests verify local request/state behavior. Li
 capability has **not** been verified: development had no WorkOS test environment or credentials.
 Before using a real account, require a disposable WorkOS test environment, an enabled team feature
 flag, exact environment/application/team IDs, and both credentials when managing REST roles.
-Verify import/refresh, apply, defaults and full-set readback, a second no-op plan, drift correction,
+Verify import/refresh, apply, AuthKit enablement, defaults and full-set readback, a second no-op plan, drift correction,
 and detach behavior there. Mock success is not evidence of a successful live WorkOS apply.

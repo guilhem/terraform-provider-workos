@@ -40,6 +40,7 @@ type AuthkitConfigurationResourceModel struct {
 	DefaultLogoutURI   types.String `tfsdk:"default_logout_uri"`
 	CORSOrigins        types.Set    `tfsdk:"cors_origins"`
 	InitiateLoginURI   types.String `tfsdk:"initiate_login_uri"`
+	AuthkitEnabled     types.Bool   `tfsdk:"authkit_enabled"`
 	AllowSignup        types.Bool   `tfsdk:"allow_signup"`
 	WaitlistEnabled    types.Bool   `tfsdk:"waitlist_enabled"`
 }
@@ -57,7 +58,7 @@ func configurationTargetAttribute(description string) schema.StringAttribute {
 
 func (r *AuthkitConfigurationResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Authoritatively manages the default AuthKit application's complete redirect/logout URI sets, environment CORS origins, initiate-login URI, signup, and waitlist settings. Use one owner per environment. Destroy only detaches Terraform state and leaves all remote settings unchanged, with a warning.",
+		Description: "Authoritatively manages the default AuthKit application's complete redirect/logout URI sets, environment CORS origins, initiate-login URI, AuthKit enablement, signup, and waitlist settings. Use one owner per environment. Destroy only detaches Terraform state and leaves all remote settings unchanged, with a warning.",
 		Attributes: map[string]schema.Attribute{
 			"id":                   schema.StringAttribute{Computed: true, Description: "Singleton import ID: environment_id/application_id.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"environment_id":       configurationTargetAttribute("Exact environment ID belonging to account_team_id; checked before every configuration mutation."),
@@ -68,6 +69,7 @@ func (r *AuthkitConfigurationResource) Schema(_ context.Context, _ resource.Sche
 			"default_logout_uri":   schema.StringAttribute{Required: true, Description: "Default logout URL; must be a member of logout_uris."},
 			"cors_origins":         schema.SetAttribute{Required: true, ElementType: types.StringType, Description: "Complete allowed HTTP(S) web origin set without paths, queries, credentials, wildcards, or fragments. An empty set disables all allowed origins."},
 			"initiate_login_uri":   schema.StringAttribute{Required: true, Description: "Absolute HTTP(S) initiate-login URL."},
+			"authkit_enabled":      schema.BoolAttribute{Required: true, Description: "Whether AuthKit is enabled for the environment."},
 			"allow_signup":         schema.BoolAttribute{Required: true, Description: "Whether AuthKit allows user signup."},
 			"waitlist_enabled":     schema.BoolAttribute{Required: true, Description: "Whether AuthKit enables the signup waitlist."},
 		},
@@ -89,7 +91,7 @@ func (data *AuthkitConfigurationResourceModel) configuration(ctx context.Context
 	config := &client.AuthkitConfiguration{
 		EnvironmentID: data.EnvironmentID.ValueString(), ApplicationID: data.ApplicationID.ValueString(),
 		DefaultRedirectURI: data.DefaultRedirectURI.ValueString(), DefaultLogoutURI: data.DefaultLogoutURI.ValueString(),
-		InitiateLoginURI: data.InitiateLoginURI.ValueString(), AllowSignup: data.AllowSignup.ValueBool(), WaitlistEnabled: data.WaitlistEnabled.ValueBool(),
+		InitiateLoginURI: data.InitiateLoginURI.ValueString(), AuthkitEnabled: data.AuthkitEnabled.ValueBool(), AllowSignup: data.AllowSignup.ValueBool(), WaitlistEnabled: data.WaitlistEnabled.ValueBool(),
 	}
 	var diagnostics diag.Diagnostics
 	diagnostics.Append(data.RedirectURIs.ElementsAs(ctx, &config.RedirectURIs, false)...)
@@ -136,6 +138,7 @@ func (data *AuthkitConfigurationResourceModel) setObserved(ctx context.Context, 
 	data.DefaultRedirectURI = types.StringValue(observed.DefaultRedirectURI)
 	data.DefaultLogoutURI = types.StringValue(observed.DefaultLogoutURI)
 	data.InitiateLoginURI = types.StringValue(observed.InitiateLoginURI)
+	data.AuthkitEnabled = types.BoolValue(observed.AuthkitEnabled)
 	data.AllowSignup = types.BoolValue(observed.AllowSignup)
 	data.WaitlistEnabled = types.BoolValue(observed.WaitlistEnabled)
 	var diagnostics, current diag.Diagnostics
@@ -206,7 +209,7 @@ func (r *AuthkitConfigurationResource) Read(ctx context.Context, req resource.Re
 }
 
 func (r *AuthkitConfigurationResource) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
-	resp.Diagnostics.AddWarning("AuthKit Configuration Detached", "Only Terraform ownership was removed. WorkOS redirect/logout URIs, CORS origins, initiate-login URI, signup, and waitlist settings remain unchanged. Import the singleton again to resume management.")
+	resp.Diagnostics.AddWarning("AuthKit Configuration Detached", "Only Terraform ownership was removed. WorkOS redirect/logout URIs, CORS origins, initiate-login URI, AuthKit enablement, signup, and waitlist settings remain unchanged. Import the singleton again to resume management.")
 }
 
 func (r *AuthkitConfigurationResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

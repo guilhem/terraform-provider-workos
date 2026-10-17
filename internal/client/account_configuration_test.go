@@ -34,7 +34,7 @@ func desiredConfiguration() *client.AuthkitConfiguration {
 		EnvironmentID: "environment_test", ApplicationID: "application_test",
 		RedirectURIs: []string{"https://vigile.example/callback", "https://vigile.example/extra-callback"}, DefaultRedirectURI: "https://vigile.example/callback",
 		LogoutURIs: []string{"https://vigile.example/signed-out", "https://vigile.example/extra-logout"}, DefaultLogoutURI: "https://vigile.example/signed-out",
-		CORSOrigins: []string{"https://vigile.example"}, InitiateLoginURI: "https://vigile.example/login", AllowSignup: true, WaitlistEnabled: false,
+		CORSOrigins: []string{"https://vigile.example"}, InitiateLoginURI: "https://vigile.example/login", AuthkitEnabled: true, AllowSignup: true, WaitlistEnabled: false,
 	}
 }
 
@@ -71,7 +71,7 @@ func TestAuthkitConfigurationPayloadsAndConvergence(t *testing.T) {
 		{"input": map[string]any{"environmentId": "environment_test", "dryRun": false, "logoutUris": []any{map[string]any{"uri": "https://vigile.example/extra-logout", "isDefault": false}, map[string]any{"uri": "https://vigile.example/signed-out", "isDefault": true}}}},
 		{"environmentId": "environment_test", "origins": []any{"https://vigile.example"}, "dryRun": false},
 		{"input": map[string]any{"applicationId": "application_test", "initiateLoginUri": "https://vigile.example/login"}},
-		{"input": map[string]any{"environmentId": "environment_test", "allowSignUp": true, "isWaitlistEnabled": false}},
+		{"input": map[string]any{"environmentId": "environment_test", "isAuthkitEnabled": true, "allowSignUp": true, "isWaitlistEnabled": false}},
 	}
 	for i, request := range api.Writes {
 		if got := decodeVariables(t, request); !reflect.DeepEqual(got, want[i]) {
@@ -123,17 +123,17 @@ func TestAuthkitConfigurationPartialFailureRecovers(t *testing.T) {
 	if err == nil || observed == nil {
 		t.Fatal("partial failure must return an error and observed state")
 	}
-	if len(api.Writes) != 1 || observed.DefaultRedirectURI != "https://vigile.example/callback" || observed.DefaultLogoutURI != "https://old.example/logout" {
+	if len(api.Writes) != 1 || observed.DefaultRedirectURI != "https://vigile.example/callback" || observed.DefaultLogoutURI != "https://old.example/logout" || observed.AuthkitEnabled {
 		t.Fatalf("incorrect partial state: %#v", observed)
 	}
 	if strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), "raw-sensitive") {
 		t.Fatal("union error leaked raw server data")
 	}
 	api.FailField = ""
-	if _, err = c.ApplyAuthkitConfiguration(context.Background(), desiredConfiguration()); err != nil {
+	if observed, err = c.ApplyAuthkitConfiguration(context.Background(), desiredConfiguration()); err != nil {
 		t.Fatal(err)
 	}
-	if len(api.Writes) != 5 {
+	if len(api.Writes) != 5 || !observed.AuthkitEnabled {
 		t.Fatal("retry should converge remaining fields without repeating the completed redirect write")
 	}
 }
@@ -152,8 +152,51 @@ func TestAuthkitConfigurationReadbackDetectsIgnoredMutation(t *testing.T) {
 	api := testutil.NewAccountAPI()
 	api.IgnoreField = "updateUserlandSettings"
 	observed, err := accountClient(t, api).ApplyAuthkitConfiguration(context.Background(), desiredConfiguration())
-	if err == nil || observed == nil || observed.AllowSignup {
+	if err == nil || observed == nil || observed.AuthkitEnabled || observed.AllowSignup {
 		t.Fatal("must reject successful-looking mutation when actual settings differ")
+	}
+}
+
+func TestAuthkitConfigurationEnablementOnlyDrift(t *testing.T) {
+	api := testutil.NewAccountAPI()
+	desired := desiredConfiguration()
+	api.Config = *desired
+	api.Config.AuthkitEnabled = false
+	c := accountClient(t, api)
+	observed, err := c.ApplyAuthkitConfiguration(context.Background(), desired)
+	if err != nil || observed == nil || !observed.AuthkitEnabled || len(api.Writes) != 1 {
+		t.Fatalf("enablement-only drift must be corrected with one write: observed=%#v, error=%v", observed, err)
+	}
+	want := map[string]any{"input": map[string]any{"environmentId": "environment_test", "isAuthkitEnabled": true, "allowSignUp": true, "isWaitlistEnabled": false}}
+	if got := decodeVariables(t, api.Writes[0]); !reflect.DeepEqual(got, want) {
+		t.Fatalf("enablement payload=%#v", got)
+	}
+	if _, err = c.ApplyAuthkitConfiguration(context.Background(), desired); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.Writes) != 1 {
+		t.Fatal("second enablement reconciliation must be a no-op")
+	}
+	desired.AuthkitEnabled = false
+	observed, err = c.ApplyAuthkitConfiguration(context.Background(), desired)
+	if err != nil || observed == nil || observed.AuthkitEnabled || len(api.Writes) != 2 {
+		t.Fatalf("explicit false must disable AuthKit: observed=%#v, error=%v", observed, err)
+	}
+	want["input"].(map[string]any)["isAuthkitEnabled"] = false
+	if got := decodeVariables(t, api.Writes[1]); !reflect.DeepEqual(got, want) {
+		t.Fatalf("disablement payload=%#v", got)
+	}
+}
+
+func TestAuthkitConfigurationEnablementReadbackRejectsIgnoredMutation(t *testing.T) {
+	api := testutil.NewAccountAPI()
+	desired := desiredConfiguration()
+	api.Config = *desired
+	api.Config.AuthkitEnabled = false
+	api.IgnoreField = "updateUserlandSettings"
+	observed, err := accountClient(t, api).ApplyAuthkitConfiguration(context.Background(), desired)
+	if err == nil || observed == nil || observed.AuthkitEnabled || len(api.Writes) != 1 {
+		t.Fatal("enablement must be verified independently of unchanged signup and waitlist settings")
 	}
 }
 
@@ -177,6 +220,7 @@ func TestAccountTargetsFailClosed(t *testing.T) {
 		{"missing application", func(_ *testutil.AccountAPI, c *client.AuthkitConfiguration) { c.ApplicationID = "" }},
 		{"wrong application", func(_ *testutil.AccountAPI, c *client.AuthkitConfiguration) { c.ApplicationID = "other_application" }},
 		{"incomplete configuration", func(api *testutil.AccountAPI, _ *client.AuthkitConfiguration) { api.OmitOrigins = true }},
+		{"missing enablement state", func(api *testutil.AccountAPI, _ *client.AuthkitConfiguration) { api.OmitAuthkitEnabled = true }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			api := testutil.NewAccountAPI()

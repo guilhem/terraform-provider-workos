@@ -22,7 +22,7 @@ const accountTargetQuery = `query teamProjectsV2 {
 }`
 
 const authkitConfigurationQuery = `query authkitConfiguration($environmentId: String!, $applicationId: ID!) {
-  environment(id: $environmentId) { id webOrigins { origins } userlandSettings { allowSignUp isWaitlistEnabled } }
+  environment(id: $environmentId) { id webOrigins { origins } userlandSettings { isAuthkitEnabled allowSignUp isWaitlistEnabled } }
   userlandApplication(id: $applicationId) {
     id environmentId clientId isDefault initiateLoginUri
     redirectUris { id uri isDefault }
@@ -57,6 +57,7 @@ type AuthkitConfiguration struct {
 	DefaultLogoutURI   string
 	CORSOrigins        []string
 	InitiateLoginURI   string
+	AuthkitEnabled     bool
 	AllowSignup        bool
 	WaitlistEnabled    bool
 }
@@ -74,6 +75,7 @@ type authkitConfigurationData struct {
 			Origins []string `json:"origins"`
 		} `json:"webOrigins"`
 		Settings *struct {
+			AuthkitEnabled  *bool `json:"isAuthkitEnabled"`
 			AllowSignup     *bool `json:"allowSignUp"`
 			WaitlistEnabled *bool `json:"isWaitlistEnabled"`
 		} `json:"userlandSettings"`
@@ -223,7 +225,7 @@ func (c *Client) ReadAuthkitConfiguration(ctx context.Context, environmentID, ap
 		return nil, fmt.Errorf("provider client_id does not match the explicitly configured AuthKit application")
 	}
 	settings := data.Environment.Settings
-	if settings == nil || settings.AllowSignup == nil || settings.WaitlistEnabled == nil || data.Environment.WebOrigins == nil || data.Environment.WebOrigins.Origins == nil || data.Application.RedirectURIs == nil || data.Application.LogoutURIs == nil {
+	if settings == nil || settings.AuthkitEnabled == nil || settings.AllowSignup == nil || settings.WaitlistEnabled == nil || data.Environment.WebOrigins == nil || data.Environment.WebOrigins.Origins == nil || data.Application.RedirectURIs == nil || data.Application.LogoutURIs == nil {
 		return nil, fmt.Errorf("account API returned incomplete configuration; full URI and origin sets are required")
 	}
 	redirects, defaultRedirect, err := readConfigurationURIs(data.Application.RedirectURIs)
@@ -243,7 +245,7 @@ func (c *Client) ReadAuthkitConfiguration(ctx context.Context, environmentID, ap
 		RedirectURIs: redirects, DefaultRedirectURI: defaultRedirect,
 		LogoutURIs: logouts, DefaultLogoutURI: defaultLogout,
 		CORSOrigins:      sortedStrings(data.Environment.WebOrigins.Origins),
-		InitiateLoginURI: initiateLoginURI, AllowSignup: *settings.AllowSignup, WaitlistEnabled: *settings.WaitlistEnabled,
+		InitiateLoginURI: initiateLoginURI, AuthkitEnabled: *settings.AuthkitEnabled, AllowSignup: *settings.AllowSignup, WaitlistEnabled: *settings.WaitlistEnabled,
 	}, nil
 }
 
@@ -379,8 +381,8 @@ func (c *Client) ApplyAuthkitConfiguration(ctx context.Context, desired *Authkit
 	if desired.InitiateLoginURI != observed.InitiateLoginURI {
 		mutations = append(mutations, configurationMutation{updateAuthkitApplicationMutation, "updateUserlandApplication", "UserlandApplicationUpdated", map[string]any{"input": map[string]any{"applicationId": desired.ApplicationID, "initiateLoginUri": desired.InitiateLoginURI}}})
 	}
-	if desired.AllowSignup != observed.AllowSignup || desired.WaitlistEnabled != observed.WaitlistEnabled {
-		mutations = append(mutations, configurationMutation{updateUserlandSettingsMutation, "updateUserlandSettings", "", map[string]any{"input": map[string]any{"environmentId": desired.EnvironmentID, "allowSignUp": desired.AllowSignup, "isWaitlistEnabled": desired.WaitlistEnabled}}})
+	if desired.AuthkitEnabled != observed.AuthkitEnabled || desired.AllowSignup != observed.AllowSignup || desired.WaitlistEnabled != observed.WaitlistEnabled {
+		mutations = append(mutations, configurationMutation{updateUserlandSettingsMutation, "updateUserlandSettings", "", map[string]any{"input": map[string]any{"environmentId": desired.EnvironmentID, "isAuthkitEnabled": desired.AuthkitEnabled, "allowSignUp": desired.AllowSignup, "isWaitlistEnabled": desired.WaitlistEnabled}}})
 	}
 	// Validate every list on the server before making any persistent change.
 	for _, mutation := range mutations {
@@ -431,7 +433,7 @@ func (c *Client) ApplyAuthkitConfiguration(ctx context.Context, desired *Authkit
 		case "updateUserlandApplication":
 			matches = desired.InitiateLoginURI == observed.InitiateLoginURI
 		case "updateUserlandSettings":
-			matches = desired.AllowSignup == observed.AllowSignup && desired.WaitlistEnabled == observed.WaitlistEnabled
+			matches = desired.AuthkitEnabled == observed.AuthkitEnabled && desired.AllowSignup == observed.AllowSignup && desired.WaitlistEnabled == observed.WaitlistEnabled
 		}
 		if !matches {
 			return observed, fmt.Errorf("configuration readback did not confirm %s; refresh and retry", mutation.field)

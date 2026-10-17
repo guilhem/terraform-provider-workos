@@ -80,6 +80,7 @@ resource "workos_authkit_configuration" "app" {
   default_logout_uri   = "https://app.example.com/signed-out"
   cors_origins         = ["https://app.example.com"]
   initiate_login_uri   = "https://app.example.com/login"
+  authkit_enabled      = true
   allow_signup         = true
   waitlist_enabled     = false
 }
@@ -277,7 +278,7 @@ OpenTofu uses the same import IDs with `tofu import`.
 | `workos_user` | Manages AuthKit users |
 | `workos_organization_membership` | Manages user-organization memberships |
 | `workos_environment_role` | Manages environment-level authorization roles |
-| `workos_authkit_configuration` | Owns complete AuthKit URL/origin sets and signup settings for an existing environment |
+| `workos_authkit_configuration` | Owns complete AuthKit URL/origin sets, enablement, and signup settings for an existing environment |
 | `workos_environment_role_configuration` | Sets an existing environment's default role without changing role definitions |
 | `workos_organization_role` | Manages organization authorization roles |
 | `workos_permission` | Manages environment-level permissions |

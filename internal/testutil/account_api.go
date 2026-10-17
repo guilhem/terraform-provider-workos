@@ -40,6 +40,7 @@ type AccountAPI struct {
 	FailDryRun               bool
 	HTTPStatus               int
 	OmitOrigins              bool
+	OmitAuthkitEnabled       bool
 	IgnoreField              string
 }
 
@@ -50,7 +51,7 @@ func NewAccountAPI() *AccountAPI {
 			EnvironmentID: "environment_test", ApplicationID: "application_test",
 			RedirectURIs: []string{"https://old.example/callback"}, DefaultRedirectURI: "https://old.example/callback",
 			LogoutURIs: []string{"https://old.example/logout"}, DefaultLogoutURI: "https://old.example/logout",
-			CORSOrigins: []string{"https://old.example"}, InitiateLoginURI: "https://old.example/login", AllowSignup: false, WaitlistEnabled: true,
+			CORSOrigins: []string{"https://old.example"}, InitiateLoginURI: "https://old.example/login", AuthkitEnabled: false, AllowSignup: false, WaitlistEnabled: true,
 		},
 		Roles: map[string]string{"admin": "role_admin", "viewer": "role_viewer"}, DefaultRoleID: "role_admin", RoleConfigID: "role_config_test",
 	}
@@ -131,8 +132,12 @@ func (api *AccountAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return items
 		}
+		settings := map[string]any{"isAuthkitEnabled": api.Config.AuthkitEnabled, "allowSignUp": api.Config.AllowSignup, "isWaitlistEnabled": api.Config.WaitlistEnabled}
+		if api.OmitAuthkitEnabled {
+			delete(settings, "isAuthkitEnabled")
+		}
 		write(map[string]any{
-			"environment":                map[string]any{"id": api.Config.EnvironmentID, "webOrigins": origins, "userlandSettings": map[string]any{"allowSignUp": api.Config.AllowSignup, "isWaitlistEnabled": api.Config.WaitlistEnabled}},
+			"environment":                map[string]any{"id": api.Config.EnvironmentID, "webOrigins": origins, "userlandSettings": settings},
 			"userlandApplication":        map[string]any{"id": api.Config.ApplicationID, "clientId": "client_test", "environmentId": api.ApplicationEnvironmentID, "isDefault": true, "initiateLoginUri": api.Config.InitiateLoginURI, "redirectUris": uris(api.Config.RedirectURIs, api.Config.DefaultRedirectURI), "logoutUris": uris(api.Config.LogoutURIs, api.Config.DefaultLogoutURI)},
 			"defaultUserlandApplication": map[string]any{"id": api.DefaultApplicationID, "environmentId": api.Config.EnvironmentID},
 		})
@@ -159,6 +164,7 @@ func (api *AccountAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			IsDefault bool   `json:"isDefault"`
 		} `json:"logoutUris"`
 		InitiateLoginURI string `json:"initiateLoginUri"`
+		AuthkitEnabled   bool   `json:"isAuthkitEnabled"`
 		AllowSignup      bool   `json:"allowSignUp"`
 		WaitlistEnabled  bool   `json:"isWaitlistEnabled"`
 		DefaultRole      string `json:"defaultRole"`
@@ -217,6 +223,7 @@ func (api *AccountAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case "updateUserlandApplication":
 				api.Config.InitiateLoginURI = input.InitiateLoginURI
 			case "updateUserlandSettings":
+				api.Config.AuthkitEnabled = input.AuthkitEnabled
 				api.Config.AllowSignup = input.AllowSignup
 				api.Config.WaitlistEnabled = input.WaitlistEnabled
 			case "updateRoleConfig":

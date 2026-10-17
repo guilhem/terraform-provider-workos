@@ -42,6 +42,7 @@ func accountTestValues() map[string]tftypes.Value {
 		"default_logout_uri":   tftypes.NewValue(tftypes.String, "https://vigile.example/signed-out"),
 		"cors_origins":         environmentRolePermissionsValue("https://vigile.example"),
 		"initiate_login_uri":   tftypes.NewValue(tftypes.String, "https://vigile.example/login"),
+		"authkit_enabled":      tftypes.NewValue(tftypes.Bool, true),
 		"allow_signup":         tftypes.NewValue(tftypes.Bool, true),
 		"waitlist_enabled":     tftypes.NewValue(tftypes.Bool, false),
 	}
@@ -49,6 +50,9 @@ func accountTestValues() map[string]tftypes.Value {
 
 func TestAuthkitConfigurationSchemaValidation(t *testing.T) {
 	s := accountTestSchema(t)
+	if attribute, ok := s.Attributes["authkit_enabled"].(schema.BoolAttribute); !ok || !attribute.Required {
+		t.Fatal("authkit_enabled must be a required boolean")
+	}
 	for _, name := range []string{"redirect_uris", "logout_uris", "cors_origins"} {
 		attribute, ok := s.Attributes[name].(schema.SetAttribute)
 		if !ok || !attribute.Required {
@@ -104,7 +108,7 @@ func TestAuthkitConfigurationCreateKeepsPartialReadback(t *testing.T) {
 	if diagnostics := resp.State.Get(context.Background(), &data); diagnostics.HasError() {
 		t.Fatal(diagnostics)
 	}
-	if data.ID.ValueString() != "environment_test/application_test" || data.DefaultRedirectURI.ValueString() != "https://vigile.example/callback" || data.DefaultLogoutURI.ValueString() != "https://old.example/logout" {
+	if data.ID.ValueString() != "environment_test/application_test" || data.DefaultRedirectURI.ValueString() != "https://vigile.example/callback" || data.DefaultLogoutURI.ValueString() != "https://old.example/logout" || data.AuthkitEnabled.IsNull() || data.AuthkitEnabled.IsUnknown() || data.AuthkitEnabled.ValueBool() {
 		t.Fatalf("partial state lost: %#v", data)
 	}
 }
@@ -173,6 +177,7 @@ resource "workos_authkit_configuration" "test" {
   default_logout_uri = "https://vigile.example/signed-out"
   cors_origins = ["https://vigile.example"]
   initiate_login_uri = "https://vigile.example/login"
+  authkit_enabled = true
   allow_signup = true
   waitlist_enabled = false
 }
@@ -203,7 +208,7 @@ func TestAccAccountConfiguration_MockAPI(t *testing.T) {
 		CheckDestroy: func(*terraform.State) error {
 			api.Mu.Lock()
 			defer api.Mu.Unlock()
-			if api.Config.DefaultRedirectURI != "https://vigile.example/callback" || api.DefaultRoleID != "role_viewer" || len(api.Writes) != 8 {
+			if api.Config.DefaultRedirectURI != "https://vigile.example/callback" || !api.Config.AuthkitEnabled || api.DefaultRoleID != "role_viewer" || len(api.Writes) != 9 {
 				return fmt.Errorf("destroy must only detach and preserve all remote settings")
 			}
 			return nil
@@ -211,6 +216,7 @@ func TestAccAccountConfiguration_MockAPI(t *testing.T) {
 		Steps: []resource.TestStep{
 			{Config: config, Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("workos_authkit_configuration.test", "id", "environment_test/application_test"),
+				resource.TestCheckResourceAttr("workos_authkit_configuration.test", "authkit_enabled", "true"),
 				resource.TestCheckResourceAttr("workos_authkit_configuration.test", "allow_signup", "true"),
 				resource.TestCheckResourceAttr("workos_authkit_configuration.test", "waitlist_enabled", "false"),
 				resource.TestCheckResourceAttr("workos_environment_role_configuration.test", "default_role_slug", "viewer"), checkWrites(6),
@@ -222,9 +228,10 @@ func TestAccAccountConfiguration_MockAPI(t *testing.T) {
 				api.Mu.Lock()
 				defer api.Mu.Unlock()
 				api.Config.InitiateLoginURI = "https://drift.example/login"
+				api.Config.AuthkitEnabled = false
 				api.DefaultRoleID = "role_admin"
-			}, Config: config, Check: checkWrites(8)},
-			{Config: config, PlanOnly: true, Check: checkWrites(8)},
+			}, Config: config, Check: resource.ComposeAggregateTestCheckFunc(checkWrites(9), resource.TestCheckResourceAttr("workos_authkit_configuration.test", "authkit_enabled", "true"))},
+			{Config: config, PlanOnly: true, Check: checkWrites(9)},
 		},
 	})
 }
@@ -234,7 +241,11 @@ func TestAccAccountConfiguration_InvalidDefault(t *testing.T) {
 	server := httptest.NewServer(api)
 	defer server.Close()
 	config := strings.Replace(accountTerraformConfig(server.URL), `default_redirect_uri = "https://vigile.example/callback"`, `default_redirect_uri = "https://unregistered.example/callback"`, 1)
-	resource.Test(t, resource.TestCase{ProtoV6ProviderFactories: testAccProtoV6ProviderFactories, Steps: []resource.TestStep{{Config: config, ExpectError: regexp.MustCompile("default URI must be a member")}}})
+	missingEnabled := strings.Replace(accountTerraformConfig(server.URL), "  authkit_enabled = true\n", "", 1)
+	resource.Test(t, resource.TestCase{ProtoV6ProviderFactories: testAccProtoV6ProviderFactories, Steps: []resource.TestStep{
+		{Config: config, ExpectError: regexp.MustCompile("default URI must be a member")},
+		{Config: missingEnabled, ExpectError: regexp.MustCompile("Missing required argument")},
+	}})
 	if len(api.Writes) != 0 {
 		t.Fatal("invalid default must be rejected without writes")
 	}
@@ -266,7 +277,10 @@ func TestAccAccountConfiguration_PartialCreateRetry(t *testing.T) {
 	config := accountTerraformConfig(server.URL)
 	resource.Test(t, resource.TestCase{ProtoV6ProviderFactories: testAccProtoV6ProviderFactories, Steps: []resource.TestStep{
 		{Config: config, ExpectError: regexp.MustCompile("Unable to Apply AuthKit Configuration")},
-		{PreConfig: func() { api.Mu.Lock(); defer api.Mu.Unlock(); api.FailField = "" }, Config: config, Check: resource.TestCheckResourceAttr("workos_authkit_configuration.test", "default_logout_uri", "https://vigile.example/signed-out")},
+		{PreConfig: func() { api.Mu.Lock(); defer api.Mu.Unlock(); api.FailField = "" }, Config: config, Check: resource.ComposeAggregateTestCheckFunc(
+			resource.TestCheckResourceAttr("workos_authkit_configuration.test", "default_logout_uri", "https://vigile.example/signed-out"),
+			resource.TestCheckResourceAttr("workos_authkit_configuration.test", "authkit_enabled", "true"),
+		)},
 		{Config: config, PlanOnly: true},
 	}})
 	if len(api.Writes) != 6 {
