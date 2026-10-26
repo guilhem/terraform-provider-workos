@@ -167,7 +167,6 @@ func (p *WorkOSProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		baseURL = config.BaseURL.ValueString()
 	}
 
-	// If API key is not configured, return an error
 	if apiKey == "" && accountAccessToken == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("api_key"),

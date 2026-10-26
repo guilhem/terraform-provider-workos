@@ -55,8 +55,7 @@ provider "workos" {
 ### Configuring AuthKit and the Default Role
 
 The configuration resources manage an existing environment and its default AuthKit application.
-They do not create environments, applications, organizations, or users. Build a provider containing
-these resources before using the example; release packages are listed in [GitHub Releases](https://github.com/osodevops/terraform-provider-workos/releases).
+They do not create environments, applications, organizations, or users.
 
 Supply a separate account OAuth token through `WORKOS_ACCOUNT_ACCESS_TOKEN` and the expected
 team ID through `WORKOS_ACCOUNT_TEAM_ID`. WorkOS must enable account-plane access for that team;
@@ -72,6 +71,8 @@ provider "workos" {
 }
 
 resource "workos_authkit_configuration" "app" {
+  depends_on = [workos_environment_role_configuration.app]
+
   environment_id       = var.workos_environment_id
   application_id       = var.workos_application_id
   redirect_uris        = ["https://app.example.com/callback"]
@@ -97,6 +98,7 @@ resource "workos_environment_role_configuration" "app" {
 }
 ```
 
+The dependency sets the default viewer role before enabling public signup.
 The provider verifies team, environment, application, and REST-key ownership before any resources
 can run. After apply, refresh reads back the managed values; the next plan should show no changes.
 The URI and origin sets are authoritative: omitted entries are removed. Use one configuration
@@ -107,7 +109,7 @@ singleton **only detaches Terraform ownership**, emits a warning, and leaves rem
 unchanged. It does not reset configuration or delete WorkOS data. See
 [AuthKit configuration](docs/resources/authkit_configuration.md) and
 [default role configuration](docs/resources/environment_role_configuration.md) for imports,
-recovery, validation limits, and the live verification gate.
+recovery, validation limits, and account API requirements.
 
 ### Managing Organizations
 

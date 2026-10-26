@@ -105,18 +105,12 @@ replacement is safe because singleton destroy only detaches and never resets the
 An expired token or HTTP 403 requires a current account credential or restored account-plane/team
 access. Raw server messages and response bodies are not included in configuration diagnostics.
 
-## API evidence and live verification gate
+## Account API reference
 
 The native client uses the official WorkOS CLI's
 [GraphQL catalog](https://github.com/workos/cli/blob/main/src/catalog/mcp-catalog.snapshot.json),
 [account bearer transport](https://github.com/workos/cli/blob/main/src/lib/dashboard-graphql.ts), and
 [target validation](https://github.com/workos/cli/blob/main/src/lib/environment-target.ts).
 It uses `setRedirectUris`, `setLogoutUris`, `setWebOrigins`, `updateUserlandApplication`, and
-`updateUserlandSettings`; no CLI subprocesses, browser cookies, or guessed REST endpoints are used.
-
-HTTP mocks and Terraform lifecycle tests verify local request/state behavior. Live account-plane
-capability has **not** been verified: development had no WorkOS test environment or credentials.
-Before using a real account, require a disposable WorkOS test environment, an enabled team feature
-flag, exact environment/application/team IDs, and both credentials when managing REST roles.
-Verify import/refresh, apply, AuthKit enablement, defaults and full-set readback, a second no-op plan, drift correction,
-and detach behavior there. Mock success is not evidence of a successful live WorkOS apply.
+`updateUserlandSettings`. Account-plane access must be enabled for the team; an environment
+API key alone cannot authenticate these operations.

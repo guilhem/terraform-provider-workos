@@ -370,7 +370,8 @@ func (c *Client) ApplyAuthkitConfiguration(ctx context.Context, desired *Authkit
 	}
 	var mutations []configurationMutation
 	if !reflect.DeepEqual(sortedStrings(desired.RedirectURIs), observed.RedirectURIs) || desired.DefaultRedirectURI != observed.DefaultRedirectURI {
-		mutations = append(mutations, configurationMutation{setRedirectURIsMutation, "setRedirectUris", "RedirectUrisSet", map[string]any{"input": map[string]any{"environmentId": desired.EnvironmentID, "applicationId": desired.ApplicationID, "redirectUris": configurationURIInputs(desired.RedirectURIs, desired.DefaultRedirectURI)}}})
+		// applicationId selects an IDP app; environmentId selects the default AuthKit app.
+		mutations = append(mutations, configurationMutation{setRedirectURIsMutation, "setRedirectUris", "RedirectUrisSet", map[string]any{"input": map[string]any{"environmentId": desired.EnvironmentID, "redirectUris": configurationURIInputs(desired.RedirectURIs, desired.DefaultRedirectURI)}}})
 	}
 	if !reflect.DeepEqual(sortedStrings(desired.LogoutURIs), observed.LogoutURIs) || desired.DefaultLogoutURI != observed.DefaultLogoutURI {
 		mutations = append(mutations, configurationMutation{setLogoutURIsMutation, "setLogoutUris", "LogoutUrisSet", map[string]any{"input": map[string]any{"environmentId": desired.EnvironmentID, "logoutUris": configurationURIInputs(desired.LogoutURIs, desired.DefaultLogoutURI)}}})

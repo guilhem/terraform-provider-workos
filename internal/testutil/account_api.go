@@ -178,6 +178,13 @@ func (api *AccountAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(request.Query, "mutation setRedirectUris"):
 		field, success = "setRedirectUris", "RedirectUrisSet"
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(request.Variables["input"], &fields)
+		// applicationId selects an IDP app, not the default AuthKit userland app.
+		if _, provided := fields["applicationId"]; provided {
+			write(map[string]any{field: map[string]any{"__typename": "ApplicationNotFound"}})
+			return
+		}
 	case strings.Contains(request.Query, "mutation setLogoutUris"):
 		field, success = "setLogoutUris", "LogoutUrisSet"
 	case strings.Contains(request.Query, "mutation updateCorsConfig"):

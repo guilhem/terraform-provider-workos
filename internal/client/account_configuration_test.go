@@ -67,7 +67,7 @@ func TestAuthkitConfigurationPayloadsAndConvergence(t *testing.T) {
 		t.Fatalf("observed configuration differs: %#v", observed)
 	}
 	want := []map[string]any{
-		{"input": map[string]any{"environmentId": "environment_test", "applicationId": "application_test", "dryRun": false, "redirectUris": []any{map[string]any{"uri": "https://vigile.example/callback", "isDefault": true}, map[string]any{"uri": "https://vigile.example/extra-callback", "isDefault": false}}}},
+		{"input": map[string]any{"environmentId": "environment_test", "dryRun": false, "redirectUris": []any{map[string]any{"uri": "https://vigile.example/callback", "isDefault": true}, map[string]any{"uri": "https://vigile.example/extra-callback", "isDefault": false}}}},
 		{"input": map[string]any{"environmentId": "environment_test", "dryRun": false, "logoutUris": []any{map[string]any{"uri": "https://vigile.example/extra-logout", "isDefault": false}, map[string]any{"uri": "https://vigile.example/signed-out", "isDefault": true}}}},
 		{"environmentId": "environment_test", "origins": []any{"https://vigile.example"}, "dryRun": false},
 		{"input": map[string]any{"applicationId": "application_test", "initiateLoginUri": "https://vigile.example/login"}},
